@@ -1,36 +1,63 @@
+using System.Reflection;
+using FastEndpoints;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using ModelMatch.User;
+using ModelMatch.Project;
+using ModelMatch.Matching;
+using ModelMatch.Clustering;
+using FastEndpoints.Security;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
+
+IList<Assembly> assemblies = [typeof(Program).Assembly];
+// Register Books Services
+builder.Services.AddUserModule(builder.Configuration, assemblies)
+                .AddProjectModule(builder.Configuration, assemblies)
+                .AddMatchingModule(builder.Configuration, assemblies)
+                .AddMClusteringModule(builder.Configuration, assemblies)
+                .AddAuthenticationJwtBearer(options =>
+{
+options.SigningKey = builder.Configuration["Auth:JwtSecret"];
+})
+                .AddAuthorization()
+                .AddFastEndpoints()
+                .AddSwaggerGen();
+
+// Have to define the Auth schema of the FastEndpoints in the Authentication
+builder.Services.AddAuthentication(options =>
+{
+options.DefaultScheme = JwtBearerDefaults.AuthenticationScheme;
+options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+});
+
+builder.Services.AddMediatR(config => config.RegisterServicesFromAssemblies(assemblies.ToArray()));
+
+//builder.Host.UseSerilog((context, configuration) =>
+//  configuration.ReadFrom.Configuration(context.Configuration));
+
 
 var app = builder.Build();
 
+//app.UseSerilogRequestLogging(); // Automatic HTTP requests logging
 
-
-app.UseHttpsRedirection();
-
-var summaries = new[]
+if (app.Environment.IsDevelopment())
 {
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
+app.UseSwagger();
+app.UseSwaggerUI();
+}
 
-app.MapGet("/weatherforecast", () =>
-{
-    var forecast =  Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
-})
-.WithName("GetWeatherForecast");
+if (app.Environment.EnvironmentName == "Testing")
+{ // Ensure User secrets is seen in Testing Environment
+  // To can access the user secrets in the test environment, you need to add the following line to the Program.cs file.
+builder.Configuration.AddUserSecrets<Program>();
+}
+//app.UseHttpsRedirection();
+app.UseAuthentication()
+  .UseAuthorization();
+
+app.UseFastEndpoints();
 
 app.Run();
 
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}
+public partial class Program { } // For tesing only
